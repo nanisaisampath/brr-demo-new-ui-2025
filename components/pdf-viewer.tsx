@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Save } from "lucide-react"
@@ -21,6 +21,8 @@ interface PDFViewerProps {
   showNavigation?: boolean
   showSaveOptions?: boolean
   documentName?: string
+  currentPage?: number
+  onCurrentPageChange?: (page: number) => void
 }
 
 export default function PDFViewer({
@@ -33,7 +35,9 @@ export default function PDFViewer({
   onTotalPagesChange,
   showNavigation = true,
   showSaveOptions = true,
-  documentName = "document"
+  documentName = "document",
+  currentPage: externalCurrentPage,
+  onCurrentPageChange
 }: PDFViewerProps) {
   const [pdfDimensions, setPdfDimensions] = useState({ width: 612, height: 792 })
   const [scrollOffset, setScrollOffset] = useState({ x: 0, y: 0 }) // Used for bounding box positioning and scroll tracking
@@ -71,44 +75,104 @@ export default function PDFViewer({
     setupPDF()
   }, [])
 
-  // Get all bounding boxes from the data
-  const getAllBboxes = () => {
-    const allBboxes: Array<{ key: string; pairId: string; bbox: number[]; value: string }> = []
+  // Synchronize external current page with internal state
+  useEffect(() => {
+    if (externalCurrentPage && externalCurrentPage !== currentPage) {
+      setCurrentPage(externalCurrentPage)
+      setPageInput(externalCurrentPage.toString())
+    }
+  }, [externalCurrentPage, currentPage])
+
+  // Notify parent component when current page changes internally (but not during programmatic scrolling)
+  useEffect(() => {
+    if (onCurrentPageChange && currentPage !== externalCurrentPage && !isScrolling) {
+      onCurrentPageChange(currentPage)
+    }
+  }, [currentPage, onCurrentPageChange, externalCurrentPage, isScrolling])
+
+  // Memoized bounding boxes processing for better performance
+  const allBboxes = useMemo(() => {
+    const bboxes: Array<{ key: string; pairId: string; bbox: number[]; value: string; page: number }> = []
     
-    Object.entries(bboxData).forEach(([key, data]) => {
-      if (Array.isArray(data)) {
-        // Handle array of objects (like Analytical Testing Reports)
-        data.forEach((item, index) => {
-          Object.entries(item).forEach(([subKey, subData]) => {
-            if (subData && typeof subData === 'object' && 'bboxes' in subData) {
-              subData.bboxes.forEach((bbox: number[], bboxIndex: number) => {
-                allBboxes.push({
-                  key: `${key}[${index}].${subKey}`,
-                  pairId: `${key}[${index}].${subKey}-${bboxIndex}`,
+    // Check if data has paginated structure (page_1, page_2, etc.)
+    const isPagedData = Object.keys(bboxData).some(key => key.startsWith('page_'))
+    
+    if (isPagedData) {
+      // Handle paginated data structure
+      Object.entries(bboxData).forEach(([pageKey, pageData]) => {
+        if (pageKey.startsWith('page_') && pageData && typeof pageData === 'object') {
+          const pageNumber = parseInt(pageKey.replace('page_', '')) || 1
+          
+          Object.entries(pageData).forEach(([key, data]) => {
+            if (Array.isArray(data)) {
+              // Handle array of objects (like Analytical Testing Reports)
+              data.forEach((item, index) => {
+                Object.entries(item).forEach(([subKey, subData]) => {
+                  if (subData && typeof subData === 'object' && 'bboxes' in subData) {
+                    subData.bboxes.forEach((bbox: number[], bboxIndex: number) => {
+                      bboxes.push({
+                        key: `${key}[${index}].${subKey}`,
+                        pairId: `${pageKey}.${key}[${index}].${subKey}-${bboxIndex}`,
+                        bbox,
+                        value: subData.value,
+                        page: pageNumber
+                      })
+                    })
+                  }
+                })
+              })
+            } else if (data && typeof data === 'object' && 'bboxes' in data) {
+              // Handle single objects
+              data.bboxes.forEach((bbox: number[], bboxIndex: number) => {
+                bboxes.push({
+                  key,
+                  pairId: `${pageKey}.${key}-${bboxIndex}`,
                   bbox,
-                  value: subData.value
+                  value: data.value,
+                  page: pageNumber
                 })
               })
             }
           })
-        })
-      } else if (data && typeof data === 'object' && 'bboxes' in data) {
-        // Handle single objects
-        data.bboxes.forEach((bbox: number[], bboxIndex: number) => {
-          allBboxes.push({
-            key,
-            pairId: `${key}-${bboxIndex}`,
-            bbox,
-            value: data.value
+        }
+      })
+    } else {
+      // Handle legacy non-paginated data structure
+      Object.entries(bboxData).forEach(([key, data]) => {
+        if (Array.isArray(data)) {
+          // Handle array of objects (like Analytical Testing Reports)
+          data.forEach((item, index) => {
+            Object.entries(item).forEach(([subKey, subData]) => {
+              if (subData && typeof subData === 'object' && 'bboxes' in subData) {
+                subData.bboxes.forEach((bbox: number[], bboxIndex: number) => {
+                  bboxes.push({
+                    key: `${key}[${index}].${subKey}`,
+                    pairId: `${key}[${index}].${subKey}-${bboxIndex}`,
+                    bbox,
+                    value: subData.value,
+                    page: 1
+                  })
+                })
+              }
+            })
           })
-        })
-      }
-    })
+        } else if (data && typeof data === 'object' && 'bboxes' in data) {
+          // Handle single objects
+          data.bboxes.forEach((bbox: number[], bboxIndex: number) => {
+            bboxes.push({
+              key,
+              pairId: `${key}-${bboxIndex}`,
+              bbox,
+              value: data.value,
+              page: 1
+            })
+          })
+        }
+      })
+    }
     
-    return allBboxes
-  }
-
-  const allBboxes = getAllBboxes()
+    return bboxes
+  }, [bboxData])
 
   // PDF loading handlers
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
@@ -322,28 +386,54 @@ export default function PDFViewer({
     }, 500) // Slightly longer than typical smooth scroll duration
   }
 
-  // Enhanced page detection with better accuracy
+  // Handle automatic scrolling when external current page changes
+  useEffect(() => {
+    if (externalCurrentPage && externalCurrentPage !== currentPage && pdfContainerRef.current && !isScrolling) {
+      scrollToPage(externalCurrentPage)
+    }
+  }, [externalCurrentPage, isScrolling])
+
+  // Optimized scroll handling with throttling
+  const handleScroll = useCallback(() => {
+    // Don't update page during programmatic scrolling to prevent feedback loops
+    if (isScrolling) return
+    
+    const container = pdfContainerRef.current
+    if (!container || numPages === 0) return
+    
+    const scrollTop = container.scrollTop
+    const containerHeight = container.clientHeight
+    const pageHeight = pdfDimensions.height * (zoom / 100) + 16 // 16px margin between pages
+    
+    // Calculate which page is most visible in the viewport
+    const viewportCenter = scrollTop + (containerHeight / 2)
+    const newCurrentPage = Math.min(numPages, Math.max(1, Math.round(viewportCenter / pageHeight) + 1))
+    
+    if (newCurrentPage !== currentPage) {
+      setCurrentPage(newCurrentPage)
+    }
+  }, [isScrolling, numPages, pdfDimensions.height, zoom, currentPage])
+
+  // Enhanced page detection with throttling for better performance
   useEffect(() => {
     const container = pdfContainerRef.current
     if (!container || numPages === 0) return
 
-    const handleScroll = () => {
-      const scrollTop = container.scrollTop
-      const containerHeight = container.clientHeight
-      const pageHeight = pdfDimensions.height * (zoom / 100) + 16 // 16px margin between pages
-      
-      // Calculate which page is most visible in the viewport
-      const viewportCenter = scrollTop + (containerHeight / 2)
-      const newCurrentPage = Math.min(numPages, Math.max(1, Math.round(viewportCenter / pageHeight) + 1))
-      
-      if (newCurrentPage !== currentPage) {
-        setCurrentPage(newCurrentPage)
-      }
+    let throttleTimer: NodeJS.Timeout | null = null
+    const throttledHandleScroll = () => {
+      if (throttleTimer) return
+      throttleTimer = setTimeout(() => {
+        handleScroll()
+        throttleTimer = null
+      }, 16) // ~60fps throttling
     }
 
-    container.addEventListener('scroll', handleScroll, { passive: true })
-    return () => container.removeEventListener('scroll', handleScroll)
-  }, [numPages, pdfDimensions.height, zoom, currentPage])
+    container.addEventListener('scroll', throttledHandleScroll, { passive: true })
+    return () => {
+      container.removeEventListener('scroll', throttledHandleScroll)
+      if (throttleTimer) clearTimeout(throttleTimer)
+    }
+  }, [handleScroll, numPages])
 
   // Keyboard navigation and shortcuts
   useEffect(() => {
@@ -566,7 +656,7 @@ export default function PDFViewer({
                   {/* Bounding Boxes Overlay for this page */}
                   <div className="absolute inset-0 pointer-events-none">
                     {selectedKey && allBboxes
-                      .filter(item => item.pairId === selectedKey)
+                      .filter(item => item.pairId === selectedKey && item.page === (index + 1))
                       .map((item, bboxIndex) => {
                         const [x1, y1, x2, y2] = item.bbox
                         const left = x1 * (zoom / 100)
@@ -580,7 +670,7 @@ export default function PDFViewer({
                             className="absolute cursor-pointer rounded-sm transition pointer-events-auto ring-2 ring-blue-600 bg-yellow-300/30"
                             style={{ left, top, width, height }}
                             onClick={() => onBboxClick?.(item.pairId)}
-                            title={`${item.key}: ${item.value}`}
+                            title={`${item.key}: ${item.value} (Page ${item.page})`}
                           />
                         )
                       })}

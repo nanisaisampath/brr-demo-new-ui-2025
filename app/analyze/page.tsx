@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { ArrowLeft, Save, Check, Trash2, Edit3, Eye, EyeOff, Search, X, Plus } from "lucide-react"
+import { ArrowLeft, Save, Check, Trash2, Edit3, Eye, EyeOff, Search, X, Plus, ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 import { Input } from "@/components/ui/input"
@@ -35,10 +35,15 @@ export default function AnalyzeFilePage() {
   const [keyValuePairs, setKeyValuePairs] = useState<KeyValuePair[]>([])
   const [, setTotalPages] = useState(1)
   const [searchQuery, setSearchQuery] = useState("")
+  const [selectedPageFilter, setSelectedPageFilter] = useState<number | null>(null)
+  const [currentPageFilter, setCurrentPageFilter] = useState<number>(1)
   const [comments, setComments] = useState("")
+  const [pdfCurrentPage, setPdfCurrentPage] = useState<number>(1)
+  const [isNavigating, setIsNavigating] = useState<boolean>(false)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   const [bboxData, setBboxData] = useState<Record<string, any>>({})
+  const [pageMetadata, setPageMetadata] = useState<Record<string, any>>({})
 
 
 
@@ -81,44 +86,105 @@ export default function AnalyzeFilePage() {
           if (!controller.signal.aborted) {
             setBboxData(data)
             
-            // Convert the data to KeyValuePair format
+            // Convert the paginated data to KeyValuePair format
             const pairs: KeyValuePair[] = []
+            const metadata: Record<string, any> = {}
             
-            Object.entries(data).forEach(([key, value]: [string, any]) => {
-              if (Array.isArray(value)) {
-                // Handle arrays like "Analytical Testing Reports"
-                value.forEach((item: any, arrayIndex: number) => {
-                  Object.entries(item).forEach(([subKey, subValue]: [string, any]) => {
-                    if (subValue && typeof subValue === "object" && "value" in subValue && "bboxes" in subValue) {
-                      subValue.bboxes.forEach((bbox: [number, number, number, number], bboxIndex: number) => {
+            // Check if data has paginated structure (page_1, page_2, etc.)
+            const isPagedData = Object.keys(data).some(key => key.startsWith('page_'))
+            
+            if (isPagedData) {
+              // Handle paginated data structure
+              Object.entries(data).forEach(([pageKey, pageData]: [string, any]) => {
+                if (pageKey.startsWith('page_') && pageData && typeof pageData === 'object') {
+                  const pageNumber = parseInt(pageKey.replace('page_', '')) || 1
+                  
+                  // Extract metadata for this page
+                  metadata[pageNumber] = {
+                    watermark_presence: pageData.watermark_presence || 'Unknown',
+                    typed_vs_handwritten: pageData['typed vs handwritten'] || { typed: 0, handwritten: 0 }
+                  }
+                  
+                  Object.entries(pageData).forEach(([key, value]: [string, any]) => {
+                    if (Array.isArray(value)) {
+                      // Handle arrays like "Analytical Testing Reports"
+                      value.forEach((item: any, arrayIndex: number) => {
+                        Object.entries(item).forEach(([subKey, subValue]: [string, any]) => {
+                          if (subValue && typeof subValue === "object" && "value" in subValue && "bboxes" in subValue) {
+                            subValue.bboxes.forEach((bbox: [number, number, number, number], bboxIndex: number) => {
+                              pairs.push({
+                                id: `${pageKey}.${key}[${arrayIndex}].${subKey}-${bboxIndex}`,
+                                key: `${key}[${arrayIndex}].${subKey}`,
+                                value: subValue.value,
+                                confidence: 0.95,
+                                bbox,
+                                page: pageNumber
+                              })
+                            })
+                          }
+                        })
+                      })
+                    } else if (value && typeof value === "object" && "value" in value && "bboxes" in value) {
+                      // Handle simple key-value pairs
+                      value.bboxes.forEach((bbox: [number, number, number, number], index: number) => {
                         pairs.push({
-                          id: `${key}[${arrayIndex}].${subKey}-${bboxIndex}`,
-                          key: `${key}[${arrayIndex}].${subKey}`,
-                          value: subValue.value,
+                          id: `${pageKey}.${key}-${index}`,
+                          key,
+                          value: value.value,
                           confidence: 0.95,
                           bbox,
-                          page: 1
+                          page: pageNumber
                         })
                       })
                     }
                   })
-                })
-              } else if (value && typeof value === "object" && "value" in value && "bboxes" in value) {
-                // Handle simple key-value pairs
-                value.bboxes.forEach((bbox: [number, number, number, number], index: number) => {
-                  pairs.push({
-                    id: `${key}-${index}`,
-                    key,
-                    value: value.value,
-                    confidence: 0.95,
-                    bbox,
-                    page: 1
-                  })
-                })
+                }
+              })
+            } else {
+              // Handle legacy non-paginated data structure
+              // Extract metadata for single page
+              metadata[1] = {
+                watermark_presence: data.watermark_presence || 'Unknown',
+                typed_vs_handwritten: data['typed vs handwritten'] || { typed: 0, handwritten: 0 }
               }
-            })
+              
+              Object.entries(data).forEach(([key, value]: [string, any]) => {
+                if (Array.isArray(value)) {
+                  // Handle arrays like "Analytical Testing Reports"
+                  value.forEach((item: any, arrayIndex: number) => {
+                    Object.entries(item).forEach(([subKey, subValue]: [string, any]) => {
+                      if (subValue && typeof subValue === "object" && "value" in subValue && "bboxes" in subValue) {
+                        subValue.bboxes.forEach((bbox: [number, number, number, number], bboxIndex: number) => {
+                          pairs.push({
+                            id: `${key}[${arrayIndex}].${subKey}-${bboxIndex}`,
+                            key: `${key}[${arrayIndex}].${subKey}`,
+                            value: subValue.value,
+                            confidence: 0.95,
+                            bbox,
+                            page: 1
+                          })
+                        })
+                      }
+                    })
+                  })
+                } else if (value && typeof value === "object" && "value" in value && "bboxes" in value) {
+                  // Handle simple key-value pairs
+                  value.bboxes.forEach((bbox: [number, number, number, number], index: number) => {
+                    pairs.push({
+                      id: `${key}-${index}`,
+                      key,
+                      value: value.value,
+                      confidence: 0.95,
+                      bbox,
+                      page: 1
+                    })
+                  })
+                }
+              })
+            }
             
             setKeyValuePairs(pairs)
+            setPageMetadata(metadata)
           }
         } catch (error) {
           if (!controller.signal.aborted) {
@@ -166,21 +232,122 @@ export default function AnalyzeFilePage() {
     }
   }
 
-  // Filter key/value pairs based on search query
-  const filteredKeyValuePairs = keyValuePairs.filter((pair) => {
-    if (!searchQuery.trim()) return true
-    const query = searchQuery.toLowerCase()
-    return (
-      pair.key.toLowerCase().includes(query) ||
-      pair.value.toLowerCase().includes(query)
-    )
-  })
+  // Get unique pages from the data
+  const availablePages = Array.from(new Set(keyValuePairs.map(pair => pair.page).filter(page => page !== undefined))).sort((a, b) => a! - b!)
 
-  const clearSearch = () => {
+  // Scroll to top of key-value pairs section
+  const scrollToTop = useCallback(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({
+        top: 0,
+        behavior: 'smooth'
+      })
+    }
+  }, [])
+
+  // Optimized navigation functions with useCallback
+  const goToPreviousPage = useCallback(() => {
+    if (currentPageFilter > 1) {
+      const newPage = currentPageFilter - 1
+      setCurrentPageFilter(newPage)
+      setSelectedPageFilter(availablePages[newPage - 1])
+      scrollToTop()
+    }
+  }, [currentPageFilter, availablePages, scrollToTop])
+
+  const goToNextPage = useCallback(() => {
+    if (currentPageFilter < availablePages.length) {
+      const newPage = currentPageFilter + 1
+      setCurrentPageFilter(newPage)
+      setSelectedPageFilter(availablePages[newPage - 1])
+      scrollToTop()
+    }
+  }, [currentPageFilter, availablePages, scrollToTop])
+
+  const showAllPages = useCallback(() => {
+    setSelectedPageFilter(null)
+    setCurrentPageFilter(1)
+    scrollToTop()
+  }, [scrollToTop])
+
+  const startPageNavigation = useCallback(() => {
+    if (availablePages.length > 0) {
+      setSelectedPageFilter(availablePages[0])
+      setCurrentPageFilter(1)
+      scrollToTop()
+    }
+  }, [availablePages, scrollToTop])
+
+  // Navigate PDF to specific page when clicking on key-value pair
+  const navigateToPage = useCallback(async (pageNumber: number) => {
+    if (pageNumber && pageNumber > 0 && pageNumber !== pdfCurrentPage) {
+      setIsNavigating(true)
+      
+      // Immediate page change for faster response
+      setPdfCurrentPage(pageNumber)
+      
+      // Shorter feedback duration for better responsiveness
+      setTimeout(() => {
+        setIsNavigating(false)
+      }, 300)
+    }
+  }, [pdfCurrentPage])
+
+  // Optimized useEffect hooks for better performance
+  
+  // Handle page filter synchronization
+  useEffect(() => {
+    if (selectedPageFilter !== null && availablePages.length > 0) {
+      const pageIndex = availablePages.indexOf(selectedPageFilter)
+      if (pageIndex !== -1) {
+        setCurrentPageFilter(pageIndex + 1)
+      }
+    }
+  }, [selectedPageFilter, availablePages])
+  
+  // Handle PDF page synchronization when page filter changes
+  useEffect(() => {
+    if (selectedPageFilter !== null && selectedPageFilter !== pdfCurrentPage) {
+      setPdfCurrentPage(selectedPageFilter)
+    }
+  }, [selectedPageFilter, pdfCurrentPage])
+  
+  // Handle navigation state reset when switching between filtered and all pages view
+  useEffect(() => {
+    if (selectedPageFilter === null) {
+      setCurrentPageFilter(1)
+    }
+  }, [selectedPageFilter])
+
+  // Set initial page filter when data loads
+  useEffect(() => {
+    if (availablePages.length > 0 && selectedPageFilter === null) {
+      setSelectedPageFilter(availablePages[0])
+      setCurrentPageFilter(1)
+    }
+  }, [availablePages, selectedPageFilter])
+
+  // Memoized filter for better performance
+  const filteredKeyValuePairs = useMemo(() => {
+    return keyValuePairs.filter((pair) => {
+      // Search filter
+      const matchesSearch = !searchQuery.trim() || (
+        pair.key.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        pair.value.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+      
+      // Page filter
+      const matchesPage = selectedPageFilter === null || pair.page === selectedPageFilter
+      
+      return matchesSearch && matchesPage
+    })
+  }, [keyValuePairs, searchQuery, selectedPageFilter])
+
+  const clearSearch = useCallback(() => {
     setSearchQuery("")
-  }
+  }, [])
 
-  const addNewKeyValuePair = () => {
+  const addNewKeyValuePair = useCallback(() => {
     const newPair: KeyValuePair = {
       id: `new-${Date.now()}`, // Generate unique ID
       key: "",
@@ -200,8 +367,8 @@ export default function AnalyzeFilePage() {
           behavior: 'smooth'
         })
       }
-    }, 100)
-  }
+    }, 50) // Reduced delay for faster response
+  }, [])
 
   const saveData = () => {
     const dataToSave = {
@@ -302,6 +469,8 @@ export default function AnalyzeFilePage() {
               zoom={zoom}
               onZoomChange={setZoom}
               onTotalPagesChange={setTotalPages}
+              currentPage={pdfCurrentPage}
+              onCurrentPageChange={setPdfCurrentPage}
             />
           </div>
           
@@ -333,18 +502,66 @@ export default function AnalyzeFilePage() {
 
         {/* Right Panel - Extracted Data */}
         <div className="w-2/5 flex flex-col">
+
+          
           <div className="p-4 border-b bg-gray-50">
-            <div className="flex items-center justify-between">
+            <div className="flex items-start justify-between gap-4">
+              {/* Page Metadata Section */}
+              {Object.keys(pageMetadata).length > 0 && (() => {
+                const currentPage = selectedPageFilter || (availablePages.length > 0 ? availablePages[0] : 1)
+                const metadata = pageMetadata[currentPage]
+                if (!metadata) return null
+                
+                return (
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-gray-600 uppercase tracking-wider mb-2">
+                      Page {selectedPageFilter || currentPage}
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600 font-medium">Watermark:</span>
+                        <Badge 
+                          variant="outline" 
+                          className={`text-sm px-3 py-1 h-7 ${
+                            metadata.watermark_presence?.toLowerCase() === 'no' 
+                              ? 'bg-green-50 text-green-700 border-green-200'
+                              : metadata.watermark_presence?.toLowerCase() === 'yes'
+                                ? 'bg-red-50 text-red-700 border-red-200'
+                                : 'bg-gray-50 text-gray-700 border-gray-200'
+                          }`}
+                        >
+                          {metadata.watermark_presence || '?'}
+                        </Badge>
+                      </div>
+                      
+                      {metadata.typed_vs_handwritten && (
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-sm px-3 py-1 h-7 bg-blue-50 text-blue-700 border-blue-200">
+                            Typed: {metadata.typed_vs_handwritten.typed || 0}%
+                          </Badge>
+                          <Badge variant="outline" className="text-sm px-3 py-1 h-7 bg-orange-50 text-orange-700 border-orange-200">
+                            Handwritten: {metadata.typed_vs_handwritten.handwritten || 0}%
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
+              
+              {/* Add Additional Values Button */}
               {!isViewMode && (
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={addNewKeyValuePair}
-                  className="text-xs"
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  add additional values
-                </Button>
+                <div className="flex-shrink-0">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={addNewKeyValuePair}
+                    className="text-xs"
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    add additional values
+                  </Button>
+                </div>
               )}
             </div>
           </div>
@@ -355,7 +572,7 @@ export default function AnalyzeFilePage() {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
               <Input
                 type="text"
-                placeholder="Search key/value pairs..."
+                placeholder="Search"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-10 pr-10"
@@ -371,11 +588,48 @@ export default function AnalyzeFilePage() {
                 </Button>
               )}
             </div>
-            {searchQuery && (
-              <div className="mt-2 text-xs text-gray-600">
-                Showing {filteredKeyValuePairs.length} of {keyValuePairs.length} pairs
+            {/* Page Navigation */}
+            {availablePages.length > 1 && (
+              <div className="mt-3">
+                <div className="text-xs font-medium text-gray-600 mb-2">Navigate Pages:</div>
+                <div className="flex items-center gap-2">
+
+                  
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={selectedPageFilter === null ? startPageNavigation : goToPreviousPage}
+                      disabled={selectedPageFilter !== null && currentPageFilter === 1}
+                      className="text-xs h-7 w-7 p-0"
+                      title={selectedPageFilter === null ? "Start browsing pages" : "Previous page"}
+                    >
+                      <ChevronLeft className="w-3 h-3" />
+                    </Button>
+                    
+                    <span className="text-xs text-gray-600 px-2 min-w-[80px] text-center">
+                      {selectedPageFilter === null 
+                        ? "Browse" 
+                        : `Page ${selectedPageFilter} of ${availablePages.length}`
+                      }
+                    </span>
+                    
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={selectedPageFilter === null ? startPageNavigation : goToNextPage}
+                      disabled={selectedPageFilter !== null && currentPageFilter === availablePages.length}
+                      className="text-xs h-7 w-7 p-0"
+                      title={selectedPageFilter === null ? "Start browsing pages" : "Next page"}
+                    >
+                      <ChevronRight className="w-3 h-3" />
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
+            
+
           </div>
 
           <div ref={scrollContainerRef} className="flex-1 overflow-auto">
@@ -412,9 +666,17 @@ export default function AnalyzeFilePage() {
                       selectedPair === pair.id 
                         ? "ring-2 ring-blue-500 bg-blue-50 border-blue-200 shadow-md" 
                         : "hover:shadow-md hover:border-gray-300"
+                    } ${
+                      isNavigating && selectedPair === pair.id 
+                        ? "animate-pulse bg-blue-100" 
+                        : ""
                     }`}
                     onClick={() => {
                       setSelectedPair(selectedPair === pair.id ? null : pair.id)
+                      // Navigate to the page if the pair has a page number
+                      if (pair.page) {
+                        navigateToPage(pair.page)
+                      }
                     }}
                   >
                     <CardContent className="p-4">
@@ -425,6 +687,11 @@ export default function AnalyzeFilePage() {
                             <Badge variant="outline" className="text-xs font-mono">
                               #{index + 1}
                             </Badge>
+                            {pair.page && (
+                              <Badge variant="outline" className="text-xs font-medium bg-blue-100 text-blue-800 border-blue-200">
+                                Page {pair.page}
+                              </Badge>
+                            )}
                             <Badge 
                               variant="outline"
                               className={`text-xs font-medium ${
@@ -437,6 +704,11 @@ export default function AnalyzeFilePage() {
                             >
                               {Math.round(pair.confidence * 100)}% confidence
                             </Badge>
+                            {pair.page && (
+                              <Badge variant="outline" className="text-xs bg-blue-100 text-blue-800 border-blue-200">
+                                Page {pair.page}
+                              </Badge>
+                            )}
                             {selectedPair === pair.id && (
                               <Badge variant="default" className="text-xs bg-blue-600">
                                 <Eye className="w-3 h-3 mr-1" />
