@@ -1,0 +1,24 @@
+{
+	"fileTypes": [
+		{
+			"mime": "script/python",
+			"extension": "py"
+		},
+		{
+			"mime": "script/jupyter notebook",
+			"extension": "ipynb"
+		},
+		{
+			"mime": "text/text",
+			"extension": "txt"
+		},
+		{
+			"mime": "json/json",
+			"extension": "json"
+		},
+		{
+			"mime":"image/jpeg",
+			"extension": "jpeg"
+		}
+	]
+}
