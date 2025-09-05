@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, memo } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Breadcrumb,
@@ -332,7 +332,7 @@ export type S3BrowserOnSelect = (folder: {
   lastModified?: string
 }) => void
 
-export default function S3Browser({
+const S3Browser = memo(function S3Browser({
   initialPath = "/",
   onSelect,
   onStateChange,
@@ -693,4 +693,6 @@ export default function S3Browser({
       </div>
     </AsyncErrorBoundary>
   )
-}
+})
+
+export default S3Browser

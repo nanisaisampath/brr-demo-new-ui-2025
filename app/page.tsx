@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo, memo } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { CheckCircle, PanelLeft, PanelLeftClose, FileText, Download, AlertCircle, Trash2, BarChart3 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -8,7 +8,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import S3Browser, { S3BrowserOnSelect } from "@/components/s3-browser"
 import ClassificationResults from "@/components/classification-results"
 import LiveProgressPopup from "@/components/live-progress-popup"
-// import { GenerateDataMontageFixed } from "@/components/generate-data-montage-fixed"
 import { ScanStatus, ScanResult, FileAnalysis, S3Folder } from "@/types/scan"
 import { useResourceManager, useTimer } from "@/lib/memory-utils"
 import { useErrorHandler } from "@/lib/error-handler"
@@ -150,14 +149,31 @@ export default function LandingPage() {
   
 
   
-  const goToChecklist = () => {
-    router.push("/checklist")
-  }
+  const goToChecklist = useCallback(() => {
+    // Store current analysis data before navigation
+    if (analysis) {
+      try {
+        localStorage.setItem("brr:analysis:active", "true")
+        localStorage.setItem("brr:analysis:data", JSON.stringify(analysis))
+      } catch {
+        // ignore
+      }
+    }
+    router.push('/checklist')
+  }, [analysis, router])
 
-  const goToSummary = () => {
-    // TODO: Implement summary functionality
-    alert("Generate Summary functionality will be implemented soon!")
-  }
+  const goToSummary = useCallback(() => {
+    // Store current analysis data before navigation
+    if (analysis) {
+      try {
+        localStorage.setItem("brr:analysis:active", "true")
+        localStorage.setItem("brr:analysis:data", JSON.stringify(analysis))
+      } catch {
+        // ignore
+      }
+    }
+    router.push('/analyze')
+  }, [analysis, router])
 
 
 
@@ -212,7 +228,7 @@ export default function LandingPage() {
     }
   }, [])
 
-  const analyzeFolder = async () => {
+  const analyzeFolder = useCallback(async () => {
     if (!selectedFolder) return
     
     // Clear previous analysis data before starting new scan
@@ -269,7 +285,7 @@ export default function LandingPage() {
     } finally {
       setIsAnalyzing(false)
     }
-  }
+  }, [selectedFolder])
 
   // Reset session state when needed (e.g., when user wants to start fresh)
   const resetSession = useCallback(() => {
@@ -304,7 +320,7 @@ export default function LandingPage() {
   }, [])
 
   // Handle live progress popup completion
-  const handleProgressComplete = (result: any) => {
+  const handleProgressComplete = useCallback((result: any) => {
     if (result.success && result.data) {
       // Convert the Python output to our expected format
       const batchDocs = result.data[0]?.batchDocs || []
@@ -345,13 +361,35 @@ export default function LandingPage() {
     }
     
     setShowLiveProgress(false)
-  }
+  }, [])
 
   // Handle live progress popup close
-  const handleProgressClose = () => {
+  const handleProgressClose = useCallback(() => {
     setShowLiveProgress(false)
     setCurrentSessionId(null)
-  }
+  }, [])
+
+  // Memoized computed values to prevent unnecessary recalculations
+  const scanButtonText = useMemo(() => {
+    if (isAnalyzing) {
+      if (scanStatus?.stage === 'downloading') return 'Downloading...'
+      if (scanStatus?.stage === 'verifying') return 'Verifying...'
+      return 'Scanning...'
+    }
+    return selectedFolder ? 'Scan BRR3' : 'Select a folder'
+  }, [isAnalyzing, scanStatus?.stage, selectedFolder])
+
+  const showClassificationResults = useMemo(() => {
+    return ((scanStatus?.stage === 'completed' && !scanError) || (analysis && hasAnalysisData)) && hasScannedInSession
+  }, [scanStatus?.stage, scanError, analysis, hasAnalysisData, hasScannedInSession])
+
+  const showEmptyState = useMemo(() => {
+    return isAnalyzing && !scanError
+  }, [isAnalyzing, scanError])
+
+  const showResetOption = useMemo(() => {
+    return hasScannedInSession && !analysis && !hasAnalysisData && !isAnalyzing && !scanError
+  }, [hasScannedInSession, analysis, hasAnalysisData, isAnalyzing, scanError])
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
@@ -439,15 +477,10 @@ export default function LandingPage() {
                 disabled={!selectedFolder || isAnalyzing}
                 className="w-full rounded-full shadow-sm"
               >
-                {isAnalyzing ? (
-                  <>
-                    <Download className="w-4 h-4 mr-2 animate-spin" />
-                    {scanStatus?.stage === 'downloading' ? 'Downloading...' : 
-                     scanStatus?.stage === 'verifying' ? 'Verifying...' : 'Scanning...'}
-                  </>
-                ) : (
-                  selectedFolder ? `Scan BRR3` : "Select a folder"
+                {isAnalyzing && (
+                  <Download className="w-4 h-4 mr-2 animate-spin" />
                 )}
+                {scanButtonText}
               </Button>
               
 
@@ -513,7 +546,7 @@ export default function LandingPage() {
             )}
 
             {/* Classification Results - show when we have analysis data or scan is completed */}
-            {((scanStatus?.stage === 'completed' && !scanError) || (analysis && hasAnalysisData)) && hasScannedInSession && (
+            {showClassificationResults && (
               <div className="space-y-6">
                 <ClassificationResults 
                   analysisData={analysis} 
@@ -525,33 +558,24 @@ export default function LandingPage() {
             )}
 
             {/* Empty state - only show during analysis */}
-            {isAnalyzing && !scanError && (
+            {showEmptyState && (
               <div className="rounded-2xl border border-dashed border-slate-300/70 bg-white/60 p-8 text-center shadow-sm">
                 <div className="mx-auto mb-3 w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
-                  {isAnalyzing ? (
-                    <Download className="w-5 h-5 text-slate-500 animate-spin" />
-                  ) : (
-                    <CheckCircle className="w-5 h-5 text-slate-500" />
-                  )}
+                  <Download className="w-5 h-5 text-slate-500 animate-spin" />
                 </div>
                 <h3 className="text-sm font-medium text-slate-900">
-                  {isAnalyzing ? (
-                    scanStatus?.stage === 'downloading' ? "Downloading files..." :
-                    scanStatus?.stage === 'verifying' ? "Running verification..." :
-                    "Scanning folder..."
-                  ) : "Scan a folder to see results"}
+                  {scanStatus?.stage === 'downloading' ? "Downloading files..." :
+                   scanStatus?.stage === 'verifying' ? "Running verification..." :
+                   "Scanning folder..."}
                 </h3>
                 <p className="mt-1 text-xs text-slate-500">
-                  {isAnalyzing ? (
-                    scanStatus?.message || "Please wait while we process the selected folder."
-                  ) : "Use the S3 Browser to pick a folder, then click Scan BRR3."}
+                  {scanStatus?.message || "Please wait while we process the selected folder."}
                 </p>
-
               </div>
             )}
 
             {/* Show reset option when user has scanned but no analysis data */}
-            {hasScannedInSession && !analysis && !hasAnalysisData && !isAnalyzing && !scanError && (
+            {showResetOption && (
               <div className="rounded-2xl border border-dashed border-slate-300/70 bg-white/60 p-8 text-center shadow-sm">
                 <div className="mx-auto mb-3 w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
                   <CheckCircle className="w-5 h-5 text-slate-500" />

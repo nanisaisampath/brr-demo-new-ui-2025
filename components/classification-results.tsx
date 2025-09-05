@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, useRef } from "react"
+import { useEffect, useMemo, useState, useRef, memo } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -37,7 +37,7 @@ interface ClassificationResultsProps {
   sessionId?: string
 }
 
-export default function ClassificationResults({ analysisData, sessionId }: ClassificationResultsProps) {
+const ClassificationResults = memo(function ClassificationResults({ analysisData, sessionId }: ClassificationResultsProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const analyzedId = searchParams?.get("analyzedId") || null
@@ -383,7 +383,7 @@ export default function ClassificationResults({ analysisData, sessionId }: Class
   const isAnalyzed = (id: string) => analyzedDocs.has(id)
 
   return (
-    <Card className="shadow-md border-slate-200/70 overflow-hidden">
+    <Card className="shadow-md border-slate-200/70 overflow-hidden mr-2">
       {/* Gradient top bar */}
       <div className="h-1 w-full bg-gradient-to-r from-purple-600 to-blue-600" aria-hidden />
       <CardHeader className="pb-2">
@@ -451,7 +451,7 @@ export default function ClassificationResults({ analysisData, sessionId }: Class
           {/* Static header bar */}
           <div className="bg-white z-20">
             <div
-              className="min-w-[900px] grid items-center px-6 py-2 border-b"
+              className="min-w-[900px] grid items-center px-2 py-2 border-b"
               style={{
                 gridTemplateColumns: columnWidths.length === 4
                   ? `${columnWidths[0]}px ${columnWidths[1]}px ${columnWidths[2]}px ${columnWidths[3]}px`
@@ -694,4 +694,6 @@ export default function ClassificationResults({ analysisData, sessionId }: Class
       </CardContent>
     </Card>
   )
-}
+})
+
+export default ClassificationResults
