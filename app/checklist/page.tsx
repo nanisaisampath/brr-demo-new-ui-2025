@@ -106,14 +106,41 @@ export default function ChecklistPage() {
 
   // Load saved data on component mount
   useEffect(() => {
-    const savedData = localStorage.getItem("brr-checklist-data")
-    if (savedData) {
+    const loadData = async () => {
       try {
-        setFormData(JSON.parse(savedData))
+        // First try to load from API (data_montage.json)
+        const response = await fetch('/api/load-checklist')
+        const result = await response.json()
+        
+        if (result.success && result.data) {
+          setFormData(result.data)
+          console.log('Auto-filled form with existing data from data_montage.json')
+          return
+        }
+        
+        // Fallback to localStorage if no API data
+        const savedData = localStorage.getItem("brr-checklist-data")
+        if (savedData) {
+          setFormData(JSON.parse(savedData))
+          console.log('Loaded data from localStorage')
+        } else {
+          console.log('No existing data found, using empty form')
+        }
       } catch (error) {
-        console.error("Error loading saved checklist data:", error)
+        console.error("Error loading checklist data:", error)
+        // Fallback to localStorage on error
+        const savedData = localStorage.getItem("brr-checklist-data")
+        if (savedData) {
+          try {
+            setFormData(JSON.parse(savedData))
+          } catch (parseError) {
+            console.error("Error parsing localStorage data:", parseError)
+          }
+        }
       }
     }
+    
+    loadData()
   }, [])
 
   // Save data to localStorage whenever formData changes
@@ -214,12 +241,26 @@ export default function ChecklistPage() {
     setIsLoading(true)
     try {
       // Save to localStorage (already handled by useEffect)
-      // Here you could also save to a backend API
-      console.log("Checklist data saved:", formData)
-      alert("Checklist saved successfully!")
+      // Also save to backend API
+      const response = await fetch('/api/save-checklist', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      })
+      
+      const result = await response.json()
+      
+      if (result.success) {
+        console.log("Checklist data saved:", formData)
+        alert("✅ Checklist saved successfully to data_montage.json!")
+      } else {
+        throw new Error(result.message || 'Failed to save checklist')
+      }
     } catch (error) {
       console.error("Error saving checklist:", error)
-      alert("Error saving checklist. Please try again.")
+      alert("❌ Error saving checklist. Please try again.")
     } finally {
       setIsLoading(false)
     }
@@ -323,12 +364,15 @@ export default function ChecklistPage() {
               <AlertCircle className="h-4 w-4 text-red-600" />
               <AlertDescription className="text-red-800">
                 <div className="font-medium mb-2">Please fix the following errors:</div>
-                <ul className="list-disc list-inside space-y-1">
-                  {validationErrors.map((error, index) => (
-                    <li key={index} className="text-sm">{error}</li>
-                  ))}
-                </ul>
               </AlertDescription>
+              <div className="mt-2 space-y-1 text-red-800">
+                {validationErrors.map((error, index) => (
+                  <div key={index} className="text-sm flex items-start gap-2">
+                    <span className="text-red-600 mt-1">•</span>
+                    <span>{error}</span>
+                  </div>
+                ))}
+              </div>
             </Alert>
           )}
         </div>

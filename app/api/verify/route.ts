@@ -144,9 +144,18 @@ async function processScanInBackground(request: NextRequest, sessionId: string) 
     currentStatus.totalFiles = files.length;
     currentStatus.filesProcessed = 0;
 
+    // Heartbeat to avoid perceived stalls while downloading
+    let downloadHeartbeat: NodeJS.Timeout | null = setInterval(() => {
+      updateProgress(sessionId, {
+        ...currentStatus,
+        message: currentStatus.message || 'Downloading files from S3...'
+      })
+    }, 2000)
+
     // Download each file with proper resource management
     const downloadPromises: Promise<void>[] = [];
-    const maxConcurrentDownloads = 3; // Limit concurrent downloads to prevent resource exhaustion
+    let processedCount = 0;
+    const maxConcurrentDownloads = Number(process.env.MAX_CONCURRENT_DOWNLOADS || 3); // Limit concurrent downloads to prevent resource exhaustion
     
     for (let i = 0; i < files.length; i += maxConcurrentDownloads) {
       const batch = files.slice(i, i + maxConcurrentDownloads);
@@ -159,6 +168,14 @@ async function processScanInBackground(request: NextRequest, sessionId: string) 
         let downloadTimeout: NodeJS.Timeout | null = null;
         
         try {
+          // Update current file immediately for better UX
+          const fileNamePre = path.basename(file.Key);
+          updateProgress(sessionId, {
+            ...currentStatus,
+            currentFile: fileNamePre,
+            message: `Downloading ${fileNamePre}...`
+          });
+
           const getCommand = new GetObjectCommand({
             Bucket: bucketName,
             Key: file.Key,
@@ -194,17 +211,29 @@ async function processScanInBackground(request: NextRequest, sessionId: string) 
             throw error;
           });
 
-          // Convert stream to buffer with size limits
+          // Convert stream to buffer with size limits and stall watchdog
           const chunks: Uint8Array[] = [];
           let totalSize = 0;
           const maxFileSize = 100 * 1024 * 1024; // 100MB limit
-          
-          for await (const chunk of response.Body as any) {
-            totalSize += chunk.length;
-            if (totalSize > maxFileSize) {
-              throw new Error(`File ${fileName} exceeds maximum size limit (100MB)`);
+          const bodyStream = response.Body as unknown as import('stream').Readable;
+          let lastActivityAt = Date.now();
+          const inactivityLimitMs = Number(process.env.DOWNLOAD_INACTIVITY_LIMIT_MS || 20000); // 20s without data
+          const stallWatcher = setInterval(() => {
+            if (Date.now() - lastActivityAt > inactivityLimitMs) {
+              bodyStream.destroy(new Error(`Download stalled for file: ${fileName}`));
             }
-            chunks.push(chunk);
+          }, 2000);
+          try {
+            for await (const chunk of bodyStream as any) {
+              lastActivityAt = Date.now();
+              totalSize += chunk.length;
+              if (totalSize > maxFileSize) {
+                throw new Error(`File ${fileName} exceeds maximum size limit (100MB)`);
+              }
+              chunks.push(chunk);
+            }
+          } finally {
+            clearInterval(stallWatcher);
           }
           
           const buffer = Buffer.concat(chunks);
@@ -221,10 +250,11 @@ async function processScanInBackground(request: NextRequest, sessionId: string) 
             });
           });
 
-          // Update progress
-          currentStatus.filesProcessed = fileIndex + 1;
-          currentStatus.progress = Math.round((fileIndex + 1) / files.length * 50); // 50% for download phase
-          currentStatus.message = `Downloaded ${fileIndex + 1}/${files.length} files`;
+          // Update progress using a shared, monotonic counter
+          processedCount += 1;
+          currentStatus.filesProcessed = processedCount;
+          currentStatus.progress = Math.round((processedCount / files.length) * 50); // 50% for download phase
+          currentStatus.message = `Downloaded ${processedCount}/${files.length} files`;
           currentStatus.currentFile = fileName;
           
           console.log(`Progress update: ${currentStatus.progress}% - ${currentStatus.message}`);
@@ -235,9 +265,10 @@ async function processScanInBackground(request: NextRequest, sessionId: string) 
         } catch (error) {
           console.error(`Error downloading file ${file.Key}:`, error);
           
-          // Update progress even on error
-          currentStatus.filesProcessed = fileIndex + 1;
-          currentStatus.progress = Math.round((fileIndex + 1) / files.length * 50);
+          // Update progress even on error, ensuring monotonic counter
+          processedCount += 1;
+          currentStatus.filesProcessed = processedCount;
+          currentStatus.progress = Math.round((processedCount / files.length) * 50);
           currentStatus.message = `Error downloading ${file.Key}: ${error instanceof Error ? error.message : 'Unknown error'}`;
           updateProgress(sessionId, currentStatus);
           
@@ -257,12 +288,19 @@ async function processScanInBackground(request: NextRequest, sessionId: string) 
       await Promise.allSettled(batchPromises);
     }
 
+    // Stop heartbeat after downloads
+    if (downloadHeartbeat) {
+      clearInterval(downloadHeartbeat);
+      downloadHeartbeat = null;
+    }
+
     // Update status for verification phase
     currentStatus = {
       stage: 'verifying',
       message: 'Running verification process...',
       progress: 75,
-      filesProcessed: currentStatus.filesProcessed,
+      // Do not show X/Y count during verification to avoid misleading 16/16
+      filesProcessed: undefined,
       totalFiles: currentStatus.totalFiles,
       currentFile: 'Processing classification...',
     };

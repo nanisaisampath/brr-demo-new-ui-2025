@@ -22,9 +22,11 @@ export default function LiveProgressPopup({
 }: LiveProgressPopupProps) {
   const [progress, setProgress] = useState<ScanStatus | null>(null)
   const [isAnimating, setIsAnimating] = useState(false)
-  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null)
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
+  const lastTimestampRef = useRef<number | null>(null)
+  const stagnantPollsRef = useRef<number>(0)
   const abortControllerRef = useRef<AbortController | null>(null)
 
   // Start/stop polling based on visibility and sessionId
@@ -51,7 +53,7 @@ export default function LiveProgressPopup({
   }, [isVisible]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const startPolling = () => {
-    if (pollingInterval) return // Already polling
+    if (pollingIntervalRef.current) return // Already polling
     
     // Create new abort controller for this polling session
     abortControllerRef.current = new AbortController()
@@ -60,7 +62,7 @@ export default function LiveProgressPopup({
       if (!sessionId || !abortControllerRef.current) return
       
       try {
-        const response = await fetch(`/api/verify/progress?sessionId=${sessionId}`, {
+        const response = await fetch(`/api/verify/progress?sessionId=${sessionId}&_=${Date.now()}` , {
           signal: abortControllerRef.current.signal,
           headers: {
             'Cache-Control': 'no-cache',
@@ -80,6 +82,23 @@ export default function LiveProgressPopup({
           return
         }
         
+        // Detect stagnant/stalled progress responses
+        if (typeof data.timestamp === 'number') {
+          if (lastTimestampRef.current === data.timestamp) {
+            stagnantPollsRef.current += 1
+          } else {
+            stagnantPollsRef.current = 0
+            lastTimestampRef.current = data.timestamp
+          }
+        }
+
+        // If we have received the same progress for a while, hint a transient issue
+        if (stagnantPollsRef.current >= 8 && data.stage !== 'completed' && data.stage !== 'error') {
+          setError('Progress appears stalled. Retrying...')
+        } else {
+          setError(null)
+        }
+
         setProgress(data)
         setError(null)
         setRetryCount(0) // Reset retry count on successful response
@@ -112,28 +131,29 @@ export default function LiveProgressPopup({
         }
         
         console.error('Error polling progress:', err)
-        // Increment retry count and only show error after multiple failures
-        const newRetryCount = retryCount + 1
-        setRetryCount(newRetryCount)
-        
-        if (newRetryCount >= 3) {
-          setError('Connection lost. Please check your network connection.')
-        } else if (newRetryCount >= 1) {
-          setError(`Connection lost. Retrying... (${newRetryCount}/3)`)
-        }
+        // Increment retry count and only show error after multiple failures using functional updater
+        setRetryCount((prev) => {
+          const next = prev + 1
+          if (next >= 3) {
+            setError('Connection lost. Please check your network connection.')
+          } else if (next >= 1) {
+            setError(`Connection lost. Retrying... (${next}/3)`)
+          }
+          return next
+        })
       }
     }
     
     // Poll immediately, then every 1 second
     poll()
     const interval = setInterval(poll, 1000)
-    setPollingInterval(interval)
+    pollingIntervalRef.current = interval
   }
 
   const stopPolling = () => {
-    if (pollingInterval) {
-      clearInterval(pollingInterval)
-      setPollingInterval(null)
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current)
+      pollingIntervalRef.current = null
     }
     
     if (abortControllerRef.current) {
@@ -187,7 +207,11 @@ export default function LiveProgressPopup({
     
     const info = []
     
-    if (progress.filesProcessed !== undefined && progress.totalFiles !== undefined) {
+    if (
+      progress.stage !== 'verifying' &&
+      progress.filesProcessed !== undefined &&
+      progress.totalFiles !== undefined
+    ) {
       info.push(`${progress.filesProcessed}/${progress.totalFiles} files processed`)
     }
     

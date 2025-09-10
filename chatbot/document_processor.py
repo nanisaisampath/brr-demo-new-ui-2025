@@ -25,27 +25,47 @@ class DocumentProcessor:
         self.documents: List[Dict[str, Any]] = []
         self.document_texts: List[str] = []
         
-    def load_json_files(self, directory_path: str) -> List[Dict]:
+    def load_json_files(self, directory_path: str, selected_files: List[str] = None) -> List[Dict]:
         """
-        Load all JSON files from the specified directory.
+        Load JSON files from the specified directory.
+        If selected_files is provided, only load those specific files.
         """
         json_files = []
         directory = Path(directory_path)
         
         if not directory.exists():
             raise FileNotFoundError(f"Directory not found: {directory_path}")
-            
-        for json_file in directory.glob("*.json"):
-            try:
-                with open(json_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    json_files.append({
-                        'filename': json_file.name,
-                        'filepath': str(json_file),
-                        'data': data
-                    })
-            except Exception as e:
-                print(f"Error loading {json_file}: {e}")
+        
+        if selected_files:
+            # Load only selected files
+            for filename in selected_files:
+                json_file = directory / filename
+                if json_file.exists() and json_file.suffix == '.json':
+                    try:
+                        with open(json_file, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                            json_files.append({
+                                'filename': json_file.name,
+                                'filepath': str(json_file),
+                                'data': data
+                            })
+                    except Exception as e:
+                        print(f"Error loading {json_file}: {e}")
+                else:
+                    print(f"Warning: File not found or not a JSON file: {filename}")
+        else:
+            # Load all JSON files (original behavior)
+            for json_file in directory.glob("*.json"):
+                try:
+                    with open(json_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                        json_files.append({
+                            'filename': json_file.name,
+                            'filepath': str(json_file),
+                            'data': data
+                        })
+                except Exception as e:
+                    print(f"Error loading {json_file}: {e}")
                 
         return json_files
     
@@ -103,13 +123,18 @@ class DocumentProcessor:
                 
         return 'Unknown Document Type'
     
-    def build_index(self, json_directory: str):
+    def build_index(self, json_directory: str, selected_files: List[str] = None):
         """
         Prepare documents for querying (simplified without vector indexing).
+        If selected_files is provided, only process those specific files.
         """
-        # Load JSON files
-        json_data = self.load_json_files(json_directory)
-        print(f"Loaded {len(json_data)} JSON files")
+        # Load JSON files (all or selected)
+        json_data = self.load_json_files(json_directory, selected_files)
+        
+        if selected_files:
+            print(f"Loaded {len(json_data)} selected JSON files: {', '.join(selected_files)}")
+        else:
+            print(f"Loaded {len(json_data)} JSON files")
         
         # Convert to documents
         self.convert_to_documents(json_data)
@@ -121,6 +146,14 @@ class DocumentProcessor:
             print("Documents ready for chat interactions")
         else:
             raise ValueError("No documents found to index")
+    
+    def clear_documents(self):
+        """
+        Clear all loaded documents from memory.
+        """
+        self.documents = []
+        self.document_texts = []
+        print("Cleared all documents from memory")
     
     def query_documents(self, question: str, conversation_history: List[Dict[str, str]] = None) -> str:
         """

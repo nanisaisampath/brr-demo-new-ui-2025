@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { MessageCircle, X, FileText, Files, Send, Bot, User, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { DocumentSelector } from './document-selector'
 
 interface ChatBotProps {
   className?: string
@@ -39,12 +40,13 @@ interface DocumentSummary {
 
 export function ChatBot({ className }: ChatBotProps) {
   const [isOpen, setIsOpen] = useState(false)
-  const [currentView, setCurrentView] = useState<'menu' | 'chat'>('menu')
+  const [currentView, setCurrentView] = useState<'menu' | 'chat' | 'document-selector'>('menu')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [isClearing, setIsClearing] = useState(false)
+  const [isProcessing, setIsProcessing] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -73,31 +75,54 @@ export function ChatBot({ className }: ChatBotProps) {
 
 
 
-  const handleProcessAll = async () => {
+  const handleSelectDocuments = () => {
+    setCurrentView('document-selector')
+  }
+
+  const handleProcessSelected = async (selectedDocuments: string[]) => {
+    setIsProcessing(true)
     try {
-      setIsLoading(true)
-      const response = await fetch(`${API_BASE_URL}/documents/process`, {
+      const response = await fetch(`${API_BASE_URL}/documents/process-selective`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ action: 'all' }),
+        body: JSON.stringify({ 
+          action: 'selective',
+          selected_files: selectedDocuments 
+        }),
       })
-      
+
       if (response.ok) {
-        const data = await response.json()
+        const result = await response.json()
+        // Clear any existing messages and start fresh
+        setMessages([])
+        setConversationId(null)
+        
+        // Add welcome message with processing results
+        addMessage('assistant', `Hello! I've successfully processed ${selectedDocuments.length} document(s) for you:\n\n${selectedDocuments.map(doc => `• ${doc}`).join('\n')}\n\nYou can now ask me questions about these documents. What would you like to know?`)
         setCurrentView('chat')
-        addMessage('assistant', `Ready to process all documents. I have access to ${data.summary?.total_documents || 'multiple'} documents. What would you like to know?`)
       } else {
-        console.error('Failed to initialize all document processing')
+        const errorData = await response.json()
+        setMessages([])
+        addMessage('assistant', `Error processing selected documents: ${errorData.detail || 'Unknown error'}. Please try selecting documents again.`)
+        setCurrentView('chat')
       }
     } catch (error) {
-      console.error('Error:', error)
-      addMessage('assistant', 'Sorry, I encountered an error. Please make sure the backend server is running.')
+      console.error('Error processing selected documents:', error)
+      setMessages([])
+      addMessage('assistant', 'Sorry, I encountered an error while processing selected documents. Please make sure the backend server is running and try again.')
+      setCurrentView('chat')
     } finally {
-      setIsLoading(false)
+      setIsProcessing(false)
     }
   }
+
+  const handleCancelDocumentSelection = () => {
+    setCurrentView('menu')
+  }
+
+
 
   const addMessage = (role: 'user' | 'assistant', content: string) => {
     const newMessage: ChatMessage = {
@@ -134,11 +159,12 @@ export function ChatBot({ className }: ChatBotProps) {
         setConversationId(data.conversation_id)
         addMessage('assistant', data.response)
       } else {
-        addMessage('assistant', 'Sorry, I encountered an error processing your request.')
+        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
+        addMessage('assistant', `❌ Sorry, I encountered an error processing your request: ${errorData.detail || 'Please try again or select documents first.'}`)
       }
     } catch (error) {
       console.error('Error sending message:', error)
-      addMessage('assistant', 'Sorry, I could not connect to the server. Please make sure the backend is running.')
+      addMessage('assistant', '❌ Sorry, I could not connect to the server. Please make sure the backend is running and try again.')
     } finally {
       setIsLoading(false)
     }
@@ -153,8 +179,7 @@ export function ChatBot({ className }: ChatBotProps) {
 
   const goBackToMenu = () => {
     setCurrentView('menu')
-    setMessages([])
-    setConversationId(null)
+    // Don't clear messages here - let user return to chat if needed
   }
 
   const handleClearAllData = async () => {
@@ -173,19 +198,20 @@ export function ChatBot({ className }: ChatBotProps) {
         // Reset local state
         setMessages([])
         setConversationId(null)
-        setCurrentView('menu')
         
-        // Show success message
-        addMessage('assistant', `Cleanup completed: ${data.message}`)
+        // Show success message and stay in chat to see the result
+        addMessage('assistant', `✅ Cleanup completed successfully: ${data.message}\n\nYou can now select new documents to process.`)
         setCurrentView('chat')
       } else {
         console.error('Failed to clear data')
-        addMessage('assistant', 'Sorry, I could not clear the data. Please try again.')
+        setMessages([])
+        addMessage('assistant', '❌ Sorry, I could not clear the data. Please try again or check if the backend server is running properly.')
         setCurrentView('chat')
       }
     } catch (error) {
       console.error('Error clearing data:', error)
-      addMessage('assistant', 'Sorry, I encountered an error while clearing data. Please make sure the backend server is running.')
+      setMessages([])
+      addMessage('assistant', '❌ Sorry, I encountered an error while clearing data. Please make sure the backend server is running and try again.')
       setCurrentView('chat')
     } finally {
       setIsClearing(false)
@@ -209,14 +235,19 @@ export function ChatBot({ className }: ChatBotProps) {
         setMessages([])
         setConversationId(null)
         
-        addMessage('assistant', `${data.message}`)
+        addMessage('assistant', `✅ ${data.message}\n\nYour conversation history has been cleared. You can continue chatting with your documents.`)
+        setCurrentView('chat')
       } else {
         console.error('Failed to clear conversations')
-        addMessage('assistant', 'Sorry, I could not clear the conversations. Please try again.')
+        setMessages([])
+        addMessage('assistant', '❌ Sorry, I could not clear the conversations. Please try again or check if the backend server is running properly.')
+        setCurrentView('chat')
       }
     } catch (error) {
       console.error('Error clearing conversations:', error)
-      addMessage('assistant', 'Sorry, I encountered an error while clearing conversations.')
+      setMessages([])
+      addMessage('assistant', '❌ Sorry, I encountered an error while clearing conversations. Please make sure the backend server is running and try again.')
+      setCurrentView('chat')
     } finally {
       setIsClearing(false)
     }
@@ -244,12 +275,14 @@ export function ChatBot({ className }: ChatBotProps) {
                 <div>
                   <h3 className="font-semibold text-gray-900">Document Assistant</h3>
                   <p className="text-sm text-gray-500">
-                    {currentView === 'menu' ? 'How can I help you today?' : 'Chat with your documents'}
+                    {currentView === 'menu' ? 'How can I help you today?' : 
+                     currentView === 'document-selector' ? 'Choose documents to process' :
+                     'Chat with your documents'}
                   </p>
                 </div>
               </div>
               <div className="flex gap-1">
-                {currentView === 'chat' && (
+                {(currentView === 'chat' || currentView === 'document-selector') && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -276,16 +309,30 @@ export function ChatBot({ className }: ChatBotProps) {
                 {/* Action Buttons */}
                 <div className="space-y-3">
                   <Button
-                    onClick={handleProcessAll}
-                    disabled={isLoading}
+                    onClick={handleSelectDocuments}
+                    disabled={isProcessing}
                     className="w-full justify-start gap-3 h-12 bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50"
                   >
                     <Files className="w-5 h-5" />
                     <div className="text-left">
-                      <div className="font-medium">Process All Documents</div>
-                      <div className="text-xs text-blue-100">Analyze all available documents</div>
+                      <div className="font-medium">Select Documents</div>
+                      <div className="text-xs text-blue-100">Choose specific documents to process</div>
                     </div>
                   </Button>
+                  
+                  {messages.length > 0 && (
+                    <Button
+                      onClick={() => setCurrentView('chat')}
+                      variant="outline"
+                      className="w-full justify-start gap-3 h-10 border-green-200 hover:bg-green-50 hover:border-green-300"
+                    >
+                      <MessageCircle className="w-4 h-4 text-green-600" />
+                      <div className="text-left">
+                        <div className="text-sm font-medium text-gray-900">Continue Chat</div>
+                        <div className="text-xs text-gray-500">{messages.length} message{messages.length !== 1 ? 's' : ''}</div>
+                      </div>
+                    </Button>
+                  )}
                 </div>
 
                 {/* Cleanup Section */}
@@ -329,17 +376,24 @@ export function ChatBot({ className }: ChatBotProps) {
 
 
 
+
+
+            {/* Document Selector View */}
+            {currentView === 'document-selector' && (
+              <DocumentSelector
+                onProcessSelected={handleProcessSelected}
+                onCancel={handleCancelDocumentSelection}
+                isProcessing={isProcessing}
+              />
+            )}
+
             {/* Chat View */}
             {currentView === 'chat' && (
               <>
                 {/* Header */}
                 <div className="mb-4">
                   <Button
-                    onClick={() => {
-                      setCurrentView('menu')
-                      setMessages([])
-                      setConversationId(null)
-                    }}
+                    onClick={goBackToMenu}
                     variant="ghost"
                     size="sm"
                     className="mb-3 text-gray-600 hover:text-gray-900"

@@ -172,7 +172,7 @@ def process_extracted_files_to_fixed_json() -> int:
                     with open(output_path, 'w', encoding='utf-8') as f:
                         json.dump(fixed_data, f, indent=2, ensure_ascii=False)
                     
-                    print(f"✓ Created: {output_path}")
+                    print(f"SUCCESS: Created {output_path}")
                     processed_count += 1
                 except Exception as e:
                     print(f"Error saving file {output_filename}: {str(e)}")

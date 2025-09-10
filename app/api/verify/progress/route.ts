@@ -10,9 +10,15 @@ export async function GET(request: NextRequest) {
     
     if (!sessionId) {
       console.log('No session ID provided');
-      return NextResponse.json({
-        error: 'Session ID is required'
-      }, { status: 400 });
+      return new NextResponse(JSON.stringify({ error: 'Session ID is required' }), {
+        status: 400,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
     }
     
     const progress = getProgress(sessionId);
@@ -20,19 +26,37 @@ export async function GET(request: NextRequest) {
     
     if (!progress) {
       console.log('No progress data found for session:', sessionId);
-      return NextResponse.json({
-        stage: 'idle',
-        message: 'No active scan',
-        progress: 0
+      return new NextResponse(JSON.stringify({ stage: 'idle', message: 'No active scan', progress: 0 }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
       });
     }
     
     console.log('Returning progress data:', progress);
-    return NextResponse.json(progress);
+    return new NextResponse(JSON.stringify(progress), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
   } catch (error) {
     console.error('Error getting progress:', error);
-    return NextResponse.json({
-      error: 'Failed to get progress'
-    }, { status: 500 });
+    return new NextResponse(JSON.stringify({ error: 'Failed to get progress' }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
   }
 }

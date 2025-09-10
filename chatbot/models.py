@@ -23,10 +23,38 @@ class ProcessRequest(BaseModel):
     
     @validator('action')
     def validate_action(cls, v):
-        valid_actions = ['all', 'reload', 'clear']
+        valid_actions = ['all', 'reload', 'clear', 'selective']
         if v not in valid_actions:
             raise ValueError(f'Action must be one of: {", ".join(valid_actions)}')
-        return v  # "all"
+        return v
+
+class DocumentItem(BaseModel):
+    filename: str
+    filepath: str
+    document_type: str
+    size: Optional[int] = None
+    last_modified: Optional[str] = None
+    selected: bool = False
+
+class SelectiveProcessRequest(BaseModel):
+    action: str
+    selected_files: List[str]
+    
+    @validator('action')
+    def validate_action(cls, v):
+        if v != 'selective':
+            raise ValueError('Action must be "selective" for selective processing')
+        return v
+    
+    @validator('selected_files')
+    def validate_selected_files(cls, v):
+        if not v or len(v) == 0:
+            raise ValueError('At least one file must be selected')
+        return v
+
+class DocumentListResponse(BaseModel):
+    documents: List[DocumentItem]
+    total_count: int
 
 class HealthResponse(BaseModel):
     status: str

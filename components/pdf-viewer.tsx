@@ -33,7 +33,7 @@ export default function PDFViewer({
   zoom = 100,
   onZoomChange,
   onTotalPagesChange,
-  showNavigation = true,
+  showNavigation = false,
   showSaveOptions = true,
   documentName = "document",
   currentPage: externalCurrentPage,
@@ -494,73 +494,7 @@ export default function PDFViewer({
           <h3 className="font-medium text-gray-900">Document Viewer</h3>
           
           <div className="flex items-center space-x-4">
-            {/* Navigation Controls */}
-            {showNavigation && numPages > 1 && (
-              <div className={`flex items-center space-x-2 transition-opacity duration-200 ${isScrolling ? 'opacity-75' : 'opacity-100'}`}>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={goToFirstPage}
-                  disabled={currentPage === 1 || isScrolling}
-                  title="First page (Home key)"
-                  className="transition-all duration-200 hover:scale-105"
-                >
-                  <ChevronUp className="w-4 h-4" />
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={goToPreviousPage}
-                  disabled={currentPage === 1 || isScrolling}
-                  title="Previous page (← or ↑ key)"
-                  className="transition-all duration-200 hover:scale-105"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-                
-                <div className="flex items-center space-x-2 px-2">
-                  <span className="text-sm text-gray-600">
-                    Page
-                  </span>
-                  <Input
-                    type="number"
-                    value={pageInput}
-                    onChange={(e) => handlePageInputChange(e.target.value)}
-                    onKeyDown={handlePageInputKeyDown}
-                    onBlur={handlePageInputSubmit}
-                    className="w-16 h-8 text-center text-sm transition-all duration-200 focus:ring-2 focus:ring-blue-500"
-                    min={1}
-                    max={numPages}
-                    title="Enter page number and press Enter"
-                    disabled={isScrolling}
-                  />
-                  <span className="text-sm text-gray-600">
-                    of {numPages}
-                  </span>
-                </div>
-                
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={goToNextPage}
-                  disabled={currentPage === numPages || isScrolling}
-                  title="Next page (→ or ↓ key)"
-                  className="transition-all duration-200 hover:scale-105"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={goToLastPage}
-                  disabled={currentPage === numPages || isScrolling}
-                  title="Last page (End key)"
-                  className="transition-all duration-200 hover:scale-105"
-                >
-                  <ChevronDown className="w-4 h-4" />
-                </Button>
-              </div>
-            )}
+            {/* Navigation Controls Removed - Users will navigate using key-value pair page navigation buttons */}
             
             {/* Save Controls */}
             {showSaveOptions && (
@@ -601,8 +535,8 @@ export default function PDFViewer({
         </div>
       </div>
 
-      {/* Scroll Progress Indicator */}
-      {showNavigation && numPages > 1 && (
+      {/* Scroll Progress Indicator - Still showing page progress even without navigation buttons */}
+      {numPages > 1 && (
         <div className="h-1 bg-gray-200 relative">
           <div 
             className="h-full bg-blue-500 transition-all duration-300 ease-out"
@@ -683,8 +617,8 @@ export default function PDFViewer({
         </div>
       </div>
 
-      {/* Floating Page Indicator */}
-      {showNavigation && numPages > 1 && isScrolling && (
+      {/* Floating Page Indicator - Still showing during scrolling */}
+      {numPages > 1 && isScrolling && (
         <div className="fixed top-1/2 right-4 transform -translate-y-1/2 z-50">
           <div className="bg-black/80 text-white px-3 py-2 rounded-lg shadow-lg backdrop-blur-sm transition-all duration-200">
             <div className="text-sm font-medium">

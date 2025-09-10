@@ -588,46 +588,62 @@ export default function AnalyzeFilePage() {
                 </Button>
               )}
             </div>
-            {/* Page Navigation */}
-            {availablePages.length > 1 && (
-              <div className="mt-3">
-                <div className="text-xs font-medium text-gray-600 mb-2">Navigate Pages:</div>
-                <div className="flex items-center gap-2">
-
-                  
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={selectedPageFilter === null ? startPageNavigation : goToPreviousPage}
-                      disabled={selectedPageFilter !== null && currentPageFilter === 1}
-                      className="text-xs h-7 w-7 p-0"
-                      title={selectedPageFilter === null ? "Start browsing pages" : "Previous page"}
-                    >
-                      <ChevronLeft className="w-3 h-3" />
-                    </Button>
-                    
-                    <span className="text-xs text-gray-600 px-2 min-w-[80px] text-center">
-                      {selectedPageFilter === null 
-                        ? "Browse" 
-                        : `Page ${selectedPageFilter} of ${availablePages.length}`
-                      }
-                    </span>
-                    
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={selectedPageFilter === null ? startPageNavigation : goToNextPage}
-                      disabled={selectedPageFilter !== null && currentPageFilter === availablePages.length}
-                      className="text-xs h-7 w-7 p-0"
-                      title={selectedPageFilter === null ? "Start browsing pages" : "Next page"}
-                    >
-                      <ChevronRight className="w-3 h-3" />
-                    </Button>
+            {/* Page Navigation and Summary */}
+            <div className="mt-3 flex items-start gap-6">
+              {/* Page Navigation */}
+              {availablePages.length > 1 && (
+                <div className="flex-shrink-0">
+                  <div className="text-xs font-medium text-gray-600 mb-2">Navigate Pages:</div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={selectedPageFilter === null ? startPageNavigation : goToPreviousPage}
+                        disabled={selectedPageFilter !== null && currentPageFilter === 1}
+                        className="text-xs h-7 w-7 p-0"
+                        title={selectedPageFilter === null ? "Start browsing pages" : "Previous page"}
+                      >
+                        <ChevronLeft className="w-3 h-3" />
+                      </Button>
+                      
+                      <span className="text-xs text-gray-600 px-2 min-w-[80px] text-center">
+                        {selectedPageFilter === null 
+                          ? "Browse" 
+                          : `Page ${selectedPageFilter} of ${availablePages.length}`
+                        }
+                      </span>
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={selectedPageFilter === null ? startPageNavigation : goToNextPage}
+                        disabled={selectedPageFilter !== null && currentPageFilter === availablePages.length}
+                        className="text-xs h-7 w-7 p-0"
+                        title={selectedPageFilter === null ? "Start browsing pages" : "Next page"}
+                      >
+                        <ChevronRight className="w-3 h-3" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
+              
+              {/* Summary */}
+               <div className="flex-shrink-0">
+                 <div className="text-xs font-medium text-gray-600 mb-2">Summary:</div>
+                 <div className="text-xs">
+                   <div>
+                     <span className="text-gray-600">
+                       {searchQuery ? "Filtered Pairs:" : "Total Pairs:"}
+                     </span>
+                     <span className="ml-2 font-medium text-gray-900">
+                       {searchQuery ? `${filteredKeyValuePairs.length} of ${keyValuePairs.length}` : keyValuePairs.length}
+                     </span>
+                   </div>
+                 </div>
+               </div>
+            </div>
             
 
           </div>
@@ -828,27 +844,7 @@ export default function AnalyzeFilePage() {
             )}
           </div>
 
-          {/* Summary */}
-          <div className="py-3 px-4 border-t bg-gray-50">
-            <div className="text-xs text-gray-600 mb-2 font-medium uppercase tracking-wide">Summary</div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="text-gray-600">
-                  {searchQuery ? "Filtered Pairs:" : "Total Pairs:"}
-                </span>
-                <span className="ml-2 font-medium text-gray-900">
-                  {searchQuery ? `${filteredKeyValuePairs.length} of ${keyValuePairs.length}` : keyValuePairs.length}
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-600">Selected:</span>
-                <span className="ml-2 font-medium text-blue-600">
-                  {selectedPair ? "1" : "0"}
-                </span>
-              </div>
-            </div>
-
-          </div>
+          {/* Summary section moved to be beside navigation pages */}
 
 
 

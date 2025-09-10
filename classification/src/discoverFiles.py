@@ -255,7 +255,12 @@ def classifyFiles(batchFolder):
       return getReturnArray(False, batchConfig['message'], None)
     pdfBatch = batchConfig['data']
     for file in pdfBatch:
-      text = extract_text(file, page_numbers=[0])
+      try:
+        text = extract_text(file, page_numbers=[0])
+      except Exception as e:
+        # Skip files that cannot be parsed as valid PDFs without failing the whole batch
+        print(f"Warning: Skipping unreadable PDF '{file}': {e}")
+        continue
       if len(text):
         wordCount = len(text.strip().split())
         if wordCount>=int(os.getenv('COUNT_THRESHOLD')):
