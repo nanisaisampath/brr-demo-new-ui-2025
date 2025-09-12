@@ -200,7 +200,7 @@ async function fetchS3Data(prefix: string = ""): Promise<S3ApiResponse> {
     const timeoutId = setTimeout(() => {
       controller.abort()
       console.warn('Request timeout for prefix:', effectivePrefix)
-    }, 10000) // 10 second timeout
+    }, 30000) // 30 second timeout
     
     const response = await fetch(finalUrl, {
       signal: controller.signal,
@@ -245,7 +245,17 @@ async function fetchS3Data(prefix: string = ""): Promise<S3ApiResponse> {
   } catch (error) {
     if (error instanceof Error) {
       if (error.name === 'AbortError') {
-        console.error('Request timed out or was aborted:', prefix)
+        console.warn('S3 request timed out for prefix:', prefix)
+        // Return a specific timeout error response
+        return {
+          folders: [],
+          files: [],
+          isTruncated: false,
+          nextContinuationToken: null,
+          keyCount: 0,
+          isTimeout: true,
+          error: 'Request timed out. Please try again.'
+        }
       } else {
         console.error('Error fetching S3 data:', error.message)
       }
@@ -415,6 +425,13 @@ const S3Browser = memo(function S3Browser({
       // Check if response is an environment error
       if ('isError' in response && response.isError) {
         setEnvError(response)
+        setCurrentNodes([])
+        return
+      }
+      
+      // Check if response is a timeout error
+      if ('isTimeout' in response && response.isTimeout) {
+        setApiError(new Error(response.error || 'Request timed out. Please try again.'))
         setCurrentNodes([])
         return
       }
