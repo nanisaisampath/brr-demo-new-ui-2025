@@ -191,16 +191,6 @@ export default function LiveProgressPopup({
     return progress.message || 'Processing...'
   }
 
-  const getProgressColor = () => {
-    if (error) return 'bg-red-500'
-    if (!progress) return 'bg-gray-400'
-    
-    const progressValue = progress.progress || 0
-    if (progressValue < 30) return 'bg-blue-500'
-    if (progressValue < 70) return 'bg-yellow-500'
-    if (progressValue < 95) return 'bg-orange-500'
-    return 'bg-green-500'
-  }
 
   const getDetailedInfo = () => {
     if (!progress) return null
@@ -307,16 +297,10 @@ export default function LiveProgressPopup({
             {/* Progress bar */}
             {!error && progress && progress.stage !== 'completed' && (
               <div className="space-y-3">
-                <div className="relative">
-                  <Progress 
-                    value={progress.progress || 0} 
-                    className="h-3 bg-gray-100"
-                  />
-                  <div 
-                    className={`absolute top-0 left-0 h-3 rounded-full transition-all duration-500 ${getProgressColor()}`}
-                    style={{ width: `${progress.progress || 0}%` }}
-                  />
-                </div>
+                <Progress 
+                  value={progress.progress || 0} 
+                  className="h-3"
+                />
                 <div className="flex justify-between text-xs text-gray-500">
                   <span className="font-medium">{Math.round(progress.progress || 0)}% complete</span>
                   <span className="capitalize font-medium">{progress.stage}</span>

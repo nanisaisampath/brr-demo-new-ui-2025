@@ -423,7 +423,7 @@ const ClassificationResults = memo(function ClassificationResults({ analysisData
                 onClick={handleMarkAllForAnalysis}
                 disabled={classificationData.length === 0}
               >
-                {analyzedDocs.size === classificationData.length ? 'Clear All Markings' : 'Mark All for Analysis'}
+                {analyzedDocs.size === classificationData.length ? 'Clear All Markings' : 'Analyze All'}
               </Button>
               <Select
                 value={statusFilter}
