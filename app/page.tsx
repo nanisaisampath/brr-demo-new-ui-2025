@@ -482,14 +482,6 @@ export default function LandingPage() {
                 )}
                 {scanButtonText}
               </Button>
-              
-
-              
-              {selectedFolder && !isAnalyzing && (
-                <div className="mt-2 text-[11px] text-slate-500 truncate">
-                  Selected: <span className="font-medium">{selectedFolder.path}</span>
-                </div>
-              )}
             </div>
           </aside>
         ) : (

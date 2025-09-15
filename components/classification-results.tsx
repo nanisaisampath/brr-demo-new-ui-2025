@@ -6,7 +6,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import {
@@ -14,6 +13,7 @@ import {
   Eye,
   Trash2,
   CheckCircle,
+  Search,
 } from "lucide-react"
 
 type Status = "success" | "pending" | "error"
@@ -73,11 +73,12 @@ const ClassificationResults = memo(function ClassificationResults({ analysisData
     []
   )
 
-  // Filters/sort
-  const [query, setQuery] = useState("")
-  const [statusFilter, setStatusFilter] = useState<Status | "all">("all")
+  // Sort
   const [sortKey, setSortKey] = useState<SortKey>("fileName")
   const [sortDir, setSortDir] = useState<SortDir>("asc")
+
+  // Search
+  const [searchQuery, setSearchQuery] = useState("")
 
   // Analyzed docs persisted
   const [analyzedDocs, setAnalyzedDocs] = useState<Set<string>>(new Set())
@@ -286,14 +287,16 @@ const ClassificationResults = memo(function ClassificationResults({ analysisData
     })
   }, [analyzedId])
 
+  // Filter data based on search query
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return classificationData.filter((row: ClassificationRow) => {
-      const matchesQ = !q || row.fileName.toLowerCase().includes(q) || row.docType.toLowerCase().includes(q)
-      const matchesStatus = statusFilter === "all" || row.status === statusFilter
-      return matchesQ && matchesStatus
-    })
-  }, [classificationData, query, statusFilter])
+    if (!searchQuery.trim()) return classificationData
+    
+    const query = searchQuery.toLowerCase()
+    return classificationData.filter((row) => 
+      row.fileName.toLowerCase().includes(query) ||
+      row.docType.toLowerCase().includes(query)
+    )
+  }, [classificationData, searchQuery])
 
   const sorted = useMemo(() => {
     const sortedCopy = [...filtered].sort((a, b) => {
@@ -387,31 +390,46 @@ const ClassificationResults = memo(function ClassificationResults({ analysisData
       {/* Gradient top bar */}
       <div className="h-1 w-full bg-gradient-to-r from-purple-600 to-blue-600" aria-hidden />
       <CardHeader className="pb-2">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle className="text-xl font-semibold">
-              <span className="bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
-                Classification Results
-              </span>
-            </CardTitle>
-            {classificationData.length > 0 && (
-              <p className="text-sm text-slate-600 mt-1">
-                {analyzedDocs.size} of {classificationData.length} documents marked for analysis
-              </p>
-            )}
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4">
+            <div>
+              <CardTitle className="text-xl font-semibold">
+                <span className="bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+                  Classification Results
+                </span>
+              </CardTitle>
+              {classificationData.length > 0 && (
+                <p className="text-sm text-slate-600 mt-1">
+                  {analyzedDocs.size} of {classificationData.length} documents marked for analysis
+                </p>
+              )}
+            </div>
+
+            {/* Search Section */}
+            <div className="flex gap-2 items-center mt-3 sm:mt-0">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  placeholder="Search by file name or document type..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 h-9 w-64 border-slate-300 focus:border-purple-500 focus:ring-purple-500"
+                />
+              </div>
+              {searchQuery && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSearchQuery("")}
+                  className="h-9 px-3"
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-            <div className="flex items-center gap-2 w-full sm:w-72">
-              <Input
-                placeholder="Search by name or type..."
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value)
-                }}
-                className="h-9"
-              />
-            </div>
+          <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
             <div className="flex gap-2">
               <Button size="sm" variant="outline" className="h-9 whitespace-nowrap">
                 Upload File
@@ -425,22 +443,6 @@ const ClassificationResults = memo(function ClassificationResults({ analysisData
               >
                 {analyzedDocs.size === classificationData.length ? 'Clear All Markings' : 'Analyze All'}
               </Button>
-              <Select
-                value={statusFilter}
-                onValueChange={(v) => {
-                  setStatusFilter(v as Status | "all")
-                }}
-              >
-              <SelectTrigger className="h-9 w-full sm:w-40">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="success">Success</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="error">Error</SelectItem>
-              </SelectContent>
-            </Select>
             </div>
           </div>
         </div>
@@ -678,7 +680,7 @@ const ClassificationResults = memo(function ClassificationResults({ analysisData
                     {paged.length === 0 && !isLoading && (
                       <TableRow>
                         <TableCell colSpan={4} className="py-10 text-center text-slate-500">
-                          No results found. Try adjusting your filters.
+                          No data available.
                         </TableCell>
                       </TableRow>
                     )}
